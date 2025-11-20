@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -11,7 +11,7 @@ using namespace std;
 struct Course {
     string courseNumber;
     string courseTitle;
-    vector<string> prerequisites;// List of prerequisite course numbers
+    vector<string> prerequisites;
 };
 
 // Struct for each node in the BST
@@ -20,7 +20,7 @@ struct Node {
     Node* left;
     Node* right;
 
-    Node(Course c) {
+    Node(const Course& c) {
         course = c;
         left = nullptr;
         right = nullptr;
@@ -41,22 +41,85 @@ private:
     }
 
     // Recursively insert a course
-    Node* insert(Node* node, Course course) {
+    Node* insert(Node* node, const Course& course) {
         if (node == nullptr) return new Node(course);
+
         if (course.courseNumber < node->course.courseNumber) {
             node->left = insert(node->left, course);
+        } 
+        else if (course.courseNumber > node->course.courseNumber) {
+            node->right = insert(node->right, course);
         }
         else {
-            node->right = insert(node->right, course);
+            // My Note:
+            // If the same course number appears again, I update the existing node.
+            // This keeps the tree consistent when loading or reloading data.
+            node->course = course;
         }
         return node;
     }
 
     // Recursively search for a course
-    Node* search(Node* node, string courseNumber) {
+    Node* search(Node* node, const string& courseNumber) {
         if (node == nullptr || node->course.courseNumber == courseNumber) return node;
-        if (courseNumber < node->course.courseNumber) return search(node->left, courseNumber);
+
+        if (courseNumber < node->course.courseNumber) {
+            return search(node->left, courseNumber);
+        }
         return search(node->right, courseNumber);
+    }
+
+    // Find minimum node (used during deletion)
+    Node* findMin(Node* node) {
+        while (node != nullptr && node->left != nullptr) {
+            node = node->left;
+        }
+        return node;
+    }
+
+    // Recursively remove a course by number
+    Node* remove(Node* node, const string& courseNumber) {
+        if (node == nullptr) return nullptr;
+
+        if (courseNumber < node->course.courseNumber) {
+            node->left = remove(node->left, courseNumber);
+        } 
+        else if (courseNumber > node->course.courseNumber) {
+            node->right = remove(node->right, courseNumber);
+        } 
+        else {
+            // My Note:
+            // Added full delete logic for the BST.
+            // I had to handle:
+            // - removing a leaf node,
+            // - removing a node with one child,
+            // - and removing a node with two children by using the successor.
+            // Working through these cases helped me better understand how the tree restructures itself.
+
+            // Case 1: no children
+            if (node->left == nullptr && node->right == nullptr) {
+                delete node;
+                return nullptr;
+            }
+            // Case 2: one child
+            else if (node->left == nullptr) {
+                Node* temp = node->right;
+                delete node;
+                return temp;
+            } 
+            else if (node->right == nullptr) {
+                Node* temp = node->left;
+                delete node;
+                return temp;
+            }
+            // Case 3: two children
+            else {
+                Node* successor = findMin(node->right);
+                node->course = successor->course;
+                node->right = remove(node->right, successor->course.courseNumber);
+            }
+        }
+        return node;
     }
 
 public:
@@ -64,22 +127,50 @@ public:
         root = nullptr;
     }
 
-    // Public insert method
-    void insert(Course course) {
+    bool isEmpty() const {
+        return root == nullptr;
+    }
+
+    // Insert method
+    void insert(const Course& course) {
         root = insert(root, course);
     }
-    // Print all courses in sorted order
+
+    // Remove method
+    void removeCourse(const string& courseNumber) {
+        // My Note:
+        // This removal option wasn't in my original version.
+        // Adding it made the tree more complete and gave me practice
+        // working with deletion logic and pointer handling.
+        root = remove(root, courseNumber);
+    }
+
+    // Print all courses (sorted)
     void printAllCourses() {
+        // My Note:
+        // Added a protection check so the program doesn't try to print
+        // when the BST has no data loaded.
+        if (isEmpty()) {
+            cout << "No courses loaded. Load data first.\n";
+            return;
+        }
         inOrder(root);
     }
-    // Print a single course and its prerequisites
-    void printCourse(string courseNumber) {
+
+    // Print one course and its prerequisites
+    void printCourse(const string& courseNumber) {
+        if (isEmpty()) {
+            cout << "No courses loaded. Load data first.\n";
+            return;
+        }
+
         Node* found = search(root, courseNumber);
         if (found == nullptr) {
             cout << "Course not found.\n";
-        }
+        } 
         else {
             cout << found->course.courseNumber << ", " << found->course.courseTitle << endl;
+
             if (!found->course.prerequisites.empty()) {
                 cout << "Prerequisites: ";
                 for (size_t i = 0; i < found->course.prerequisites.size(); ++i) {
@@ -87,7 +178,7 @@ public:
                     if (i < found->course.prerequisites.size() - 1) cout << ", ";
                 }
                 cout << endl;
-            }
+            } 
             else {
                 cout << "Prerequisites: None" << endl;
             }
@@ -95,9 +186,10 @@ public:
     }
 };
 
-// Function to read courses from file and load them into the BST
-void loadCoursesFromFile(string filename, CourseBST& bst) {
+// Load courses from CSV
+void loadCoursesFromFile(const string& filename, CourseBST& bst) {
     cout << "Trying to open file: " << filename << endl;
+
     ifstream file(filename);
     if (!file.is_open()) {
         cout << "Error: Cannot open file.\n";
@@ -109,17 +201,22 @@ void loadCoursesFromFile(string filename, CourseBST& bst) {
         stringstream ss(line);
         string courseNumber, courseTitle, prereq;
         Course course;
-        // First two values are course number and title
+
         getline(ss, courseNumber, ',');
         getline(ss, courseTitle, ',');
 
         course.courseNumber = courseNumber;
         course.courseTitle = courseTitle;
-        // Remaining values are prerequisites
+
         while (getline(ss, prereq, ',')) {
-            course.prerequisites.push_back(prereq);
+            if (!prereq.empty()) {
+                course.prerequisites.push_back(prereq);
+            }
         }
-        // Adding course to BST
+
+        // My Note:
+        // The insert method now supports overwriting duplicate course entries,
+        // which helps when reloading or updating the dataset.
         bst.insert(course);
     }
 
@@ -127,20 +224,21 @@ void loadCoursesFromFile(string filename, CourseBST& bst) {
     cout << "Courses loaded successfully!\n";
 }
 
-// Displays the main menu
+// Menu
 void displayMenu() {
     cout << "\nWelcome to the course planner.\n" << endl;
     cout << "1. Load Data Structure." << endl;
     cout << "2. Print Course List." << endl;
     cout << "3. Print Course." << endl;
+    cout << "4. Remove Course." << endl;  // new option
     cout << "9. Exit\n" << endl;
-    cout << "Select a menu option by entering 1, 2, 3, or 9: ";
+    cout << "Select a menu option by entering 1, 2, 3, 4, or 9: ";
 }
 
 int main() {
-    CourseBST bst;  // The main course storage
+    CourseBST bst;
     int choice = 0;
-    // Menu loop until user exits
+
     while (choice != 9) {
         displayMenu();
         cin >> choice;
@@ -153,26 +251,43 @@ int main() {
             loadCoursesFromFile(filename, bst);
             break;
         }
+
         case 2:
             cout << "\nHere is a sample schedule:\n" << endl;
             bst.printAllCourses();
             break;
+
         case 3: {
             string courseNumber;
             cout << "Enter the course number: ";
             cin >> courseNumber;
 
-            // Convert to uppercase for consistency
             transform(courseNumber.begin(), courseNumber.end(), courseNumber.begin(), ::toupper);
-
             bst.printCourse(courseNumber);
             break;
         }
+
+        case 4: {
+            // My Note:
+            // New feature that lets the user remove a course directly from the tree.
+            // This completed the main BST operations: insert, search, traverse, and delete.
+            string courseNumber;
+            cout << "Enter the course number to remove: ";
+            cin >> courseNumber;
+
+            transform(courseNumber.begin(), courseNumber.end(), courseNumber.begin(), ::toupper);
+            bst.removeCourse(courseNumber);
+
+            cout << "If the course existed, it has been removed.\n";
+            break;
+        }
+
         case 9:
             cout << "Thank you for using the course planner!" << endl;
             break;
+
         default:
-            cout << "\n" << choice << " NOT a valid option.\n" << endl;
+            cout << "\n" << choice << " is not a valid option.\n" << endl;
         }
     }
 
